@@ -1,0 +1,349 @@
+CREATE TABLE audit_patient (
+    patient_id INT  ,
+    first_name VARCHAR(20) NOT NULL,
+    last_name VARCHAR(20) NOT NULL,
+    age INT NOT NULL,
+    gender CHAR(1) NOT NULL CHECK (gender IN ('M', 'F', 'O')),
+    address VARCHAR(100) NOT NULL,
+    phone_number VARCHAR(25) NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+CREATE TABLE audit_doctor (
+    doctor_id INT  ,
+    first_name VARCHAR(20) NOT NULL,
+    last_name VARCHAR(20) NOT NULL,
+    specialty VARCHAR(30) NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+CREATE TABLE audit_insurance (
+    insurance_id INT  ,
+    provider_id INT NOT NULL,
+    provider_name VARCHAR(40),
+    policy_number VARCHAR(50),
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+CREATE TABLE audit_patient_insurance (
+    patient_id INT NOT NULL,
+    insurance_id INT NOT NULL,
+    PRIMARY KEY (patient_id, insurance_id),
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+
+
+
+
+CREATE TABLE audit_prescriptions (
+    prescription_id INT  ,
+    patient_id INT NOT NULL,
+    medication_name VARCHAR(50) NOT NULL,
+    dosage VARCHAR(50) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+CREATE TABLE audit_appointment (
+    appointment_id INT  ,
+    patient_id INT NOT NULL,
+    appointment_date DATETIME NOT NULL,
+    doctor_id INT NOT NULL,
+    reason VARCHAR(300) NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+CREATE TABLE audit_medical_history (
+    medical_history_id INT  ,
+    patient_id INT NOT NULL,
+    medical_condition VARCHAR(300) NOT NULL,
+    date_diagnosed DATE NOT NULL,
+    treatment VARCHAR(300) NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+CREATE TABLE audit_billing (
+    billing_id INT  ,
+    appointment_id INT NOT NULL,
+    amount DECIMAL(11, 2) NOT NULL,
+    payment_date DATETIME NOT NULL,
+    action_type VARCHAR(50) NOT NULL,
+    action_date DATETIME NOT NULL,
+    action_by VARCHAR(20) NOT NULL CHECK (action_by IN ('PATIENT','DOCTOR')),
+    action_name VARCHAR(20) not NULL
+);
+
+
+
+
+CREATE TABLE user(
+	username varchar(20),
+	userpassword varchar(100),
+	user_is varchar(20) NOT NULL CHECK (user_is IN ('DOCTOR','PATIENT')),
+    user_id INT,
+    INDEX(user_id)
+);
+
+DELIMITER //
+CREATE FUNCTION get_username(userid INT)
+RETURNS VARCHAR(50)
+DETERMINISTIC
+BEGIN
+	
+  DECLARE uname VARCHAR(50);
+  SELECT username INTO uname FROM user WHERE user_id = userid;
+  RETURN uname;
+END //
+DELIMITER ;
+
+
+
+DROP TRIGGER IF EXISTS trigger_before_update_for_patient;
+DELIMITER //
+CREATE TRIGGER trigger_before_update_for_patient
+BEFORE UPDATE ON patient
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_patient (patient_id, first_name, last_name, age, gender, address, phone_number, action_type, action_date,action_by,action_name) 
+    VALUES (OLD.patient_id, OLD.first_name, OLD.last_name, OLD.age, OLD.gender, OLD.address, OLD.phone_number, 'Updated', NOW(),'PATIENT',get_username(OLD.patient_id));
+END //
+DELIMITER ;
+
+
+
+
+DROP TRIGGER IF EXISTS trigger_before_update_for_appointment;
+DELIMITER //
+CREATE TRIGGER trigger_before_update_for_appointment
+BEFORE UPDATE ON appointment
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_appointment (appointment_id,patient_id, appointment_date, doctor_id, reason, action_type, action_date,action_by,action_name) 
+    VALUES (OLD.appointment_id,OLD.patient_id, OLD.appointment_date, OLD.doctor_id, OLD.reason, 'Updated', NOW(),'DOCTOR',get_username(OLD.doctor_id));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_update_for_insurance;
+DELIMITER //
+CREATE TRIGGER trigger_before_update_for_insurance
+BEFORE UPDATE ON insurance
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_insurance (insurance_id,provider_id, provider_name, policy_number, action_type, action_date,action_by,action_name) 
+    VALUES (OLD.insurance_id,OLD.provider_id, OLD.provider_name, OLD.policy_number, 'Updated', NOW(),'PATIENT',
+    get_username((select patient_id from patient_insurance where insurance_id = OLD.insurance_id)));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_update_for_medical_history;
+DELIMITER //
+CREATE TRIGGER trigger_before_update_for_medical_history
+BEFORE UPDATE ON medical_history
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_medical_history (medical_history_id,patient_id, medical_condition, date_diagnosed, treatment,action_type, action_date,action_by,action_name) 
+    VALUES (OLD.medical_history_id,OLD.patient_id, OLD.medical_condition, OLD.date_diagnosed, OLD.treatment, 'Updated', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = OLD.patient_id) ));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_update_for_prescriptions;
+DELIMITER //
+CREATE TRIGGER trigger_before_update_for_prescriptions
+BEFORE UPDATE ON prescriptions
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_prescriptions (prescription_id,patient_id, medication_name, dosage, start_date, end_date,action_type, action_date,action_by,action_name) 
+    VALUES (OLD.prescription_id,OLD.patient_id, OLD.medication_name, OLD.dosage, OLD.start_date, OLD.end_date, 'Updated', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = OLD.patient_id) ));
+END //
+DELIMITER ;
+
+#---------------
+
+
+DROP TRIGGER IF EXISTS trigger_after_insert_for_patient;
+DELIMITER //
+CREATE TRIGGER trigger_after_insert_for_patient
+AFTER INSERT ON patient
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_patient (patient_id, first_name, last_name, age, gender, address, phone_number, action_type, action_date,action_by,action_name) 
+    VALUES (NEW.patient_id, NEW.first_name, NEW.last_name, NEW.age, NEW.gender, NEW.address, NEW.phone_number, 'Inserted', NOW(),'PATIENT',NEW.first_name);
+END //
+DELIMITER ;
+
+
+
+
+
+
+DROP TRIGGER IF EXISTS trigger_after_insert_for_appointment;
+DELIMITER //
+CREATE TRIGGER trigger_after_insert_for_appointment
+AFTER INSERT ON appointment
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_appointment (appointment_id,patient_id, appointment_date, doctor_id, reason, action_type, action_date,action_by,action_name) 
+    VALUES (NEW.appointment_id,NEW.patient_id, NEW.appointment_date, NEW.doctor_id, NEW.reason, 'Inserted', NOW(),'PATIENT',get_username(NEW.patient_id));
+END //
+DELIMITER ;
+
+#not
+DROP TRIGGER IF EXISTS trigger_after_insert_for_insurance;
+DELIMITER //
+CREATE TRIGGER trigger_after_insert_for_insurance
+AFTER INSERT ON insurance
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_insurance (insurance_id,provider_id, provider_name, policy_number, action_type, action_date,action_by,action_name) 
+    VALUES (NEW.insurance_id,NEW.provider_id, NEW.provider_name, NEW.policy_number, 'Inserted', NOW(),'PATIENT',
+    get_username((select patient_id from patient_insurance where insurance_id = NEW.insurance_id)));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_after_insert_for_medical_history;
+DELIMITER //
+CREATE TRIGGER trigger_after_insert_for_medical_history
+AFTER INSERT ON medical_history
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_medical_history (medical_history_id,patient_id, medical_condition, date_diagnosed, treatment,action_type, action_date,action_by,action_name) 
+    VALUES (NEW.medical_history_id,NEW.patient_id, NEW.medical_condition, NEW.date_diagnosed, NEW.treatment, 'INSERTED', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = NEW.patient_id) ));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_after_insert_for_prescriptions;
+DELIMITER //
+CREATE TRIGGER trigger_after_insert_for_prescriptions
+AFTER INSERT ON prescriptions
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_prescriptions (prescription_id,patient_id, medication_name, dosage, start_date, end_date,action_type, action_date,action_by,action_name) 
+    VALUES (NEW.prescription_id,NEW.patient_id, NEW.medication_name, NEW.dosage, NEW.start_date, NEW.end_date, 'Inserted', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = NEW.patient_id) ));
+END //
+DELIMITER ;
+
+#---------------
+
+
+
+DROP TRIGGER IF EXISTS trigger_before_delete_for_appointment;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_appointment
+BEFORE DELETE ON appointment
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_appointment (appointment_id,patient_id, appointment_date, doctor_id, reason, action_type, action_date,action_by,action_name) 
+    VALUES (OLD.appointment_id,OLD.patient_id, OLD.appointment_date, OLD.doctor_id, OLD.reason, 'Deleted', NOW(),'PATIENT',get_username(OLD.patient_id));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_delete_for_insurance;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_insurance
+BEFORE DELETE ON insurance
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_insurance (insurance_id,provider_id, provider_name, policy_number, action_type, action_date,action_by,action_name) 
+    VALUES (OLD.insurance_id,OLD.provider_id, OLD.provider_name, OLD.policy_number, 'Deleted', NOW(),'PATIENT',
+    get_username((select patient_id from patient_insurance where insurance_id = OLD.insurance_id)));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_delete_for_medical_history;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_medical_history
+BEFORE DELETE ON medical_history
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_medical_history (medical_history_id,patient_id, medical_condition, date_diagnosed, treatment,action_type, action_date,action_by,action_name) 
+    VALUES (OLD.medical_history_id,OLD.patient_id, OLD.medical_condition, OLD.date_diagnosed, OLD.treatment, 'Deleted', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = OLD.patient_id) ));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_delete_for_prescriptions;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_prescriptions
+BEFORE DELETE ON prescriptions
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_prescriptions (prescription_id,patient_id, medication_name, dosage, start_date, end_date,action_type, action_date,action_by,action_name) 
+    VALUES (OLD.prescription_id,OLD.patient_id, OLD.medication_name, OLD.dosage, OLD.start_date, OLD.end_date, 'Deleted', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = OLD.patient_id) ));
+END //
+DELIMITER ;
+
+#-----------
+DROP TRIGGER IF EXISTS trigger_before_delete_for_appointment;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_appointment
+BEFORE DELETE ON appointment
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_appointment (appointment_id,patient_id, appointment_date, doctor_id, reason, action_type, action_date,action_by,action_name) 
+    VALUES (OLD.appointment_id,OLD.patient_id, OLD.appointment_date, OLD.doctor_id, OLD.reason, 'Deleted', NOW(),'PATIENT',get_username(OLD.patient_id));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_delete_for_insurance;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_insurance
+BEFORE DELETE ON insurance
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_insurance (insurance_id,provider_id, provider_name, policy_number, action_type, action_date,action_by,action_name) 
+    VALUES (OLD.insurance_id,OLD.provider_id, OLD.provider_name, OLD.policy_number, 'Deleted', NOW(),'PATIENT',
+    get_username((select patient_id from patient_insurance where insurance_id = OLD.insurance_id)));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_delete_for_medical_history;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_medical_history
+BEFORE DELETE ON medical_history
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_medical_history (medical_history_id,patient_id, medical_condition, date_diagnosed, treatment,action_type, action_date,action_by,action_name) 
+    VALUES (OLD.medical_history_id,OLD.patient_id, OLD.medical_condition, OLD.date_diagnosed, OLD.treatment, 'Deleted', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = OLD.patient_id) ));
+END //
+DELIMITER ;
+
+DROP TRIGGER IF EXISTS trigger_before_delete_for_prescriptions;
+DELIMITER //
+CREATE TRIGGER trigger_before_delete_for_prescriptions
+BEFORE DELETE ON prescriptions
+FOR EACH ROW
+BEGIN
+	INSERT INTO audit_prescriptions (prescription_id,patient_id, medication_name, dosage, start_date, end_date,action_type, action_date,action_by,action_name) 
+    VALUES (OLD.prescription_id,OLD.patient_id, OLD.medication_name, OLD.dosage, OLD.start_date, OLD.end_date, 'Deleted', NOW(),'DOCTOR',
+    get_username( (select distinct doctor_id from appointment where patient_id = OLD.patient_id) ));
+END //
+DELIMITER ;
